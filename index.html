@@ -249,23 +249,43 @@
             box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
         }
 
-        /* Admin Delete Button */
-        .delete-product-btn {
+        /* Admin Buttons */
+        .admin-actions {
             position: absolute;
             top: 10px;
             right: 10px;
-            background: #ff3d00;
-            color: white;
-            border: none;
-            border-radius: 50%;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+
+        .edit-product-btn, .delete-product-btn {
             width: 35px;
             height: 35px;
-            cursor: pointer;
-            display: none;
+            border-radius: 50%;
+            display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 10;
+            cursor: pointer;
             transition: all 0.3s;
+            border: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .edit-product-btn {
+            background: #003366;
+            color: white;
+        }
+
+        .delete-product-btn {
+            background: #ff3d00;
+            color: white;
+        }
+
+        .edit-product-btn:hover {
+            background: #ff6b00;
+            transform: scale(1.1);
         }
 
         .delete-product-btn:hover {
@@ -273,8 +293,9 @@
             transform: scale(1.1);
         }
 
+        .product-card:hover .edit-product-btn,
         .product-card:hover .delete-product-btn {
-            display: flex;
+            opacity: 1;
         }
 
         /* Marques Section */
@@ -666,10 +687,10 @@
         </div>
     </div>
 
-    <!-- Add Product Modal (visible seulement pour admin) -->
-    <div id="addProductModal" class="modal">
+    <!-- Add/Edit Product Modal -->
+    <div id="productModal" class="modal">
         <div class="modal-content">
-            <h3><i class="fas fa-plus-circle"></i> Ajouter un nouveau produit</h3>
+            <h3 id="modalTitle"><i class="fas fa-plus-circle"></i> Ajouter un produit</h3>
             <div class="image-preview" id="imagePreview">
                 <i class="fas fa-image" style="font-size: 48px; color: #ccc;"></i>
             </div>
@@ -690,8 +711,9 @@
             </select>
             <input type="text" id="productBrand" placeholder="Marque" required>
             <input type="text" id="productModel" placeholder="Modèle">
-            <button onclick="addProduct()">Ajouter le produit</button>
-            <button class="close-modal" onclick="closeModal()">Annuler</button>
+            <input type="hidden" id="editingProductId" value="">
+            <button id="saveProductBtn" onclick="saveProduct()">Enregistrer</button>
+            <button class="close-modal" onclick="closeProductModal()">Annuler</button>
         </div>
     </div>
 
@@ -734,6 +756,7 @@
         let produits = [];
         let nextProductId = 100;
         let currentImageData = null;
+        let editingProductId = null;
         
         // Variables de filtrage
         let filteredProducts = [];
@@ -752,7 +775,6 @@
 
         // FONCTIONS DE SAUVEGARDE LOCALSTORAGE
         function saveProductsToLocalStorage() {
-            // On ne sauvegarde pas les images en base64 (trop volumineuses pour localStorage)
             const productsToSave = produits.map(product => ({
                 ...product,
                 image: product.image && product.image.startsWith('data:image') ? null : product.image
@@ -760,7 +782,6 @@
             localStorage.setItem('bayero_products', JSON.stringify(productsToSave));
             localStorage.setItem('bayero_next_id', nextProductId);
             
-            // Afficher le message de sauvegarde
             const statusDiv = document.getElementById('saveStatus');
             statusDiv.style.display = 'block';
             setTimeout(() => {
@@ -778,23 +799,12 @@
                     if (savedNextId) {
                         nextProductId = parseInt(savedNextId);
                     }
-                    console.log('Produits chargés depuis localStorage:', produits.length);
                     return true;
                 } catch(e) {
-                    console.error('Erreur chargement produits:', e);
                     return false;
                 }
             }
             return false;
-        }
-
-        function resetToDefaultProducts() {
-            produits = JSON.parse(JSON.stringify(defaultProducts));
-            nextProductId = 100;
-            saveProductsToLocalStorage();
-            filterProducts();
-            createMarqueButtons();
-            alert('Les produits ont été réinitialisés aux valeurs par défaut.');
         }
 
         // Charger les produits au démarrage
@@ -864,7 +874,16 @@
                     <div class="product-image" id="img-${product.id}">
                         <div class="image-placeholder">${icon}</div>
                     </div>
-                    ${isAdmin ? `<button class="delete-product-btn" onclick="deleteProduct(${product.id})"><i class="fas fa-trash"></i></button>` : ''}
+                    ${isAdmin ? `
+                        <div class="admin-actions">
+                            <button class="edit-product-btn" onclick="openEditProductModal(${product.id})">
+                                <i class="fas fa-pencil-alt"></i>
+                            </button>
+                            <button class="delete-product-btn" onclick="deleteProduct(${product.id})">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    ` : ''}
                     <div class="product-info">
                         <div class="product-brand">${product.marque}</div>
                         <div class="product-name">${product.nom}</div>
@@ -974,6 +993,124 @@
             }
         }
 
+        // Ouvrir le modal pour modifier un produit
+        function openEditProductModal(productId) {
+            if (!isAdmin) return;
+            
+            const product = produits.find(p => p.id === productId);
+            if (!product) return;
+            
+            editingProductId = productId;
+            document.getElementById('modalTitle').innerHTML = '<i class="fas fa-edit"></i> Modifier le produit';
+            document.getElementById('productName').value = product.nom;
+            document.getElementById('productDescription').value = product.description;
+            document.getElementById('productCategory').value = product.categorie;
+            document.getElementById('productBrand').value = product.marque;
+            document.getElementById('productModel').value = product.modele || '';
+            document.getElementById('editingProductId').value = productId;
+            
+            // Afficher l'image existante si disponible
+            const preview = document.getElementById('imagePreview');
+            if (product.image && product.image.startsWith('data:image')) {
+                preview.innerHTML = `<img src="${product.image}" style="max-width: 100%; max-height: 100%; object-fit: contain;">`;
+                currentImageData = product.image;
+            } else if (product.image) {
+                preview.innerHTML = `<img src="${product.image}" style="max-width: 100%; max-height: 100%; object-fit: contain;" onerror="this.parentElement.innerHTML='<i class=\'fas fa-image\' style=\'font-size: 48px; color: #ccc;\'></i>'">`;
+                currentImageData = product.image;
+            } else {
+                preview.innerHTML = '<i class="fas fa-image" style="font-size: 48px; color: #ccc;"></i>';
+                currentImageData = null;
+            }
+            
+            document.getElementById('productModal').style.display = 'flex';
+        }
+
+        // Ouvrir le modal pour ajouter un produit
+        function openAddProductModal() {
+            if (!isAdmin) {
+                alert('Accès non autorisé. Veuillez vous connecter en tant qu\'administrateur.');
+                return;
+            }
+            
+            editingProductId = null;
+            document.getElementById('modalTitle').innerHTML = '<i class="fas fa-plus-circle"></i> Ajouter un produit';
+            document.getElementById('productName').value = '';
+            document.getElementById('productDescription').value = '';
+            document.getElementById('productCategory').value = 'Ordinateurs Portables';
+            document.getElementById('productBrand').value = '';
+            document.getElementById('productModel').value = '';
+            document.getElementById('editingProductId').value = '';
+            document.getElementById('productImage').value = '';
+            currentImageData = null;
+            document.getElementById('imagePreview').innerHTML = '<i class="fas fa-image" style="font-size: 48px; color: #ccc;"></i>';
+            
+            document.getElementById('productModal').style.display = 'flex';
+        }
+
+        // Fermer le modal produit
+        function closeProductModal() {
+            document.getElementById('productModal').style.display = 'none';
+            editingProductId = null;
+            currentImageData = null;
+        }
+
+        // Sauvegarder le produit (ajout ou modification)
+        function saveProduct() {
+            if (!isAdmin) {
+                alert('Accès non autorisé.');
+                return;
+            }
+            
+            const name = document.getElementById('productName').value.trim();
+            const description = document.getElementById('productDescription').value.trim();
+            const category = document.getElementById('productCategory').value;
+            const brand = document.getElementById('productBrand').value.trim();
+            const model = document.getElementById('productModel').value.trim();
+            
+            if (!name || !description || !brand) {
+                alert('Veuillez remplir tous les champs obligatoires (Nom, Description, Marque)');
+                return;
+            }
+            
+            if (editingProductId) {
+                // Modification du produit existant
+                const index = produits.findIndex(p => p.id === editingProductId);
+                if (index !== -1) {
+                    produits[index] = {
+                        ...produits[index],
+                        nom: name,
+                        description: description,
+                        categorie: category,
+                        marque: brand,
+                        modele: model || 'N/A',
+                        image: currentImageData || produits[index].image,
+                        icon: getIconForCategory(category)
+                    };
+                    alert('Produit modifié avec succès !');
+                }
+            } else {
+                // Ajout d'un nouveau produit
+                const newProduct = {
+                    id: nextProductId++,
+                    nom: name,
+                    description: description,
+                    categorie: category,
+                    marque: brand,
+                    modele: model || 'N/A',
+                    etat: 'Neuf',
+                    image: currentImageData || null,
+                    icon: getIconForCategory(category)
+                };
+                produits.push(newProduct);
+                alert('Produit ajouté avec succès !');
+            }
+            
+            saveProductsToLocalStorage();
+            filterProducts();
+            createMarqueButtons();
+            closeProductModal();
+        }
+
         // Afficher le modal de connexion admin
         function showLoginModal() {
             document.getElementById('loginModal').style.display = 'flex';
@@ -994,43 +1131,18 @@
                 isAdmin = true;
                 closeLoginModal();
                 
-                // Afficher le bouton d'ajout
                 document.getElementById('adminPanelBtn').style.display = 'flex';
                 
-                // Mettre à jour l'affichage du bouton admin
                 const adminBtn = document.querySelector('.admin-btn');
                 adminBtn.innerHTML = '<i class="fas fa-user-check"></i> Admin <span class="admin-indicator">👑</span>';
                 adminBtn.style.background = '#00a86b';
                 
-                // Rafraîchir l'affichage pour montrer les boutons de suppression
                 filterProducts();
                 
-                alert('Connexion administrateur réussie ! Vous pouvez maintenant ajouter et supprimer des produits.');
+                alert('Connexion administrateur réussie ! Vous pouvez maintenant ajouter, modifier et supprimer des produits.');
             } else {
                 document.getElementById('loginError').style.display = 'block';
             }
-        }
-
-        // Ouvrir le modal d'ajout de produit
-        function openAddProductModal() {
-            if (!isAdmin) {
-                alert('Accès non autorisé. Veuillez vous connecter en tant qu\'administrateur.');
-                return;
-            }
-            
-            document.getElementById('addProductModal').style.display = 'flex';
-            document.getElementById('productImage').value = '';
-            document.getElementById('productName').value = '';
-            document.getElementById('productDescription').value = '';
-            document.getElementById('productBrand').value = '';
-            document.getElementById('productModel').value = '';
-            currentImageData = null;
-            document.getElementById('imagePreview').innerHTML = '<i class="fas fa-image" style="font-size: 48px; color: #ccc;"></i>';
-        }
-
-        // Fermer le modal
-        function closeModal() {
-            document.getElementById('addProductModal').style.display = 'none';
         }
 
         // Prévisualiser l'image
@@ -1061,45 +1173,6 @@
                 'Accessoires': '⌨️'
             };
             return icons[category] || '📦';
-        }
-
-        // Ajouter un produit (avec sauvegarde)
-        function addProduct() {
-            if (!isAdmin) {
-                alert('Accès non autorisé. Veuillez vous connecter en tant qu\'administrateur.');
-                return;
-            }
-            
-            const name = document.getElementById('productName').value.trim();
-            const description = document.getElementById('productDescription').value.trim();
-            const category = document.getElementById('productCategory').value;
-            const brand = document.getElementById('productBrand').value.trim();
-            const model = document.getElementById('productModel').value.trim();
-            
-            if (!name || !description || !brand) {
-                alert('Veuillez remplir tous les champs obligatoires (Nom, Description, Marque)');
-                return;
-            }
-            
-            const newProduct = {
-                id: nextProductId++,
-                nom: name,
-                description: description,
-                categorie: category,
-                marque: brand,
-                modele: model || 'N/A',
-                etat: 'Neuf',
-                image: currentImageData || null,
-                icon: getIconForCategory(category)
-            };
-            
-            produits.push(newProduct);
-            saveProductsToLocalStorage();
-            filterProducts();
-            createMarqueButtons();
-            closeModal();
-            
-            alert('Produit ajouté avec succès !');
         }
 
         // Initialisation
@@ -1136,14 +1209,14 @@
         // Rendre les fonctions disponibles globalement
         window.contactWhatsApp = contactWhatsApp;
         window.deleteProduct = deleteProduct;
+        window.openEditProductModal = openEditProductModal;
+        window.openAddProductModal = openAddProductModal;
+        window.saveProduct = saveProduct;
         window.showLoginModal = showLoginModal;
         window.closeLoginModal = closeLoginModal;
         window.checkAdminLogin = checkAdminLogin;
-        window.openAddProductModal = openAddProductModal;
-        window.closeModal = closeModal;
+        window.closeProductModal = closeProductModal;
         window.previewImage = previewImage;
-        window.addProduct = addProduct;
-        window.resetToDefaultProducts = resetToDefaultProducts;
     </script>
 </body>
 </html>
